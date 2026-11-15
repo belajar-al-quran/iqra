@@ -1,0 +1,83 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Siapkan aset (audio + font) dari repo asli
+        run: |
+          set -e
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          pip install fonttools brotli
+          git clone --depth 1 https://github.com/awahids/belajar-ngaji.git /tmp/asli
+          mkdir -p public/audio public/fonts
+          find /tmp/asli/audio -type f | while read -r f; do
+            n=$(basename "$f"); n="${n%.*}"
+            ffmpeg -y -loglevel error -i "$f" -ac 1 -c:a libopus -b:a 24k "public/audio/$n.ogg" || echo "lewati $f"
+          done
+          pyftsubset /tmp/asli/me_quran.ttf --unicodes="U+0020,U+00A0,U+0600-06FF,U+0750-077F,U+08A0-08FF,U+200C-200F,U+FB50-FDFF,U+FE70-FEFF" --flavor=woff2 --output-file=public/fonts/me_quran.woff2
+          cp /tmp/asli/LICENSE public/LICENSE-belajar-ngaji.txt
+          echo "Daftar audio:"; ls public/audio
+      - run: npm install
+      - run: node scripts/build-data.mjs
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: web
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  apk:
+    needs: web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - run: npm install
+      - run: npx cap add android
+      - run: npx cap sync android
+      - run: cd android && ./gradlew assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: iqra-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
