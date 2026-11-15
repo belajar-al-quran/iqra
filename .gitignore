@@ -1,0 +1,8 @@
+node_modules
+dist
+android
+public/audio
+public/fonts
+public/data
+*.keystore
+*.jks
