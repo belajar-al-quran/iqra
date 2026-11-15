@@ -2,6 +2,7 @@ import Framework7 from 'framework7/lite-bundle';
 import 'framework7/css/bundle';
 import './style.css';
 import { App as CapApp } from '@capacitor/app';
+import { LEVELS, HURUF, forms } from './iqra.js';
 
 const esc = (s) =>
   String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -17,21 +18,30 @@ const page = (title, body, back = true) => `
   <div class="page-content">${body}</div>
 </div>`;
 
-const HURUF = [
-  ['ا', 'Alif'], ['ب', 'Ba'], ['ت', 'Ta'], ['ث', 'Tsa'], ['ج', 'Jim'], ['ح', 'Ha'], ['خ', 'Kha'],
-  ['د', 'Dal'], ['ذ', 'Dzal'], ['ر', 'Ra'], ['ز', 'Zai'], ['س', 'Sin'], ['ش', 'Syin'], ['ص', 'Shad'],
-  ['ض', 'Dhad'], ['ط', 'Tha'], ['ظ', 'Zha'], ['ع', 'Ain'], ['غ', 'Ghain'], ['ف', 'Fa'], ['ق', 'Qaf'],
-  ['ك', 'Kaf'], ['ل', 'Lam'], ['م', 'Mim'], ['ن', 'Nun'], ['و', 'Wawu'], ['ه', 'Ha (ه)'], ['ي', 'Ya']
-];
+/* progres */
+const KEY = 'iqra-progress';
+let prog = {};
+try { prog = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch {}
+const isDone = (k) => !!prog[k];
+const setDone = (k) => {
+  prog[k] = true;
+  try { localStorage.setItem(KEY, JSON.stringify(prog)); } catch {}
+};
+const lvDone = (lv) => lv.pages.filter((_, i) => isDone(`${lv.id}-${i}`)).length;
 
-let quranCache = null;
+function paint(root) {
+  root.querySelectorAll('[data-lv]').forEach((el) => {
+    const lv = LEVELS[+el.dataset.lv - 1];
+    el.textContent = `${lvDone(lv)}/${lv.pages.length}`;
+  });
+  root.querySelectorAll('[data-pg]').forEach((el) => {
+    el.textContent = isDone(el.dataset.pg) ? '✓' : '';
+  });
+}
+
+/* audio huruf */
 let audioFiles = [];
-const loadJSON = (u) => fetch(u).then((r) => r.json());
-const loadQuran = () =>
-  quranCache ? Promise.resolve(quranCache) : loadJSON('./data/quran.json').then((d) => (quranCache = d));
-const loadAudio = () =>
-  loadJSON('./data/audio.json').catch(() => []).then((d) => (audioFiles = d));
-
+fetch('./data/audio.json').then((r) => r.json()).then((d) => (audioFiles = d)).catch(() => {});
 const base = (f) => f.replace(/\.[^.]+$/, '').toLowerCase();
 function audioFor(i) {
   const name = HURUF[i][1].toLowerCase();
@@ -41,80 +51,70 @@ function audioFor(i) {
   return byName || null;
 }
 
-const fail = (resolve) => () =>
-  resolve({ content: page('Gagal', '<div class="block">Data belum tersedia.</div>') });
+/* isi halaman */
+function lessonBody(lv, pi) {
+  const pg = lv.pages[pi];
+  let body = `<div class="block"><p class="lv-sub">${esc(lv.title)} · Halaman ${pi + 1}/${lv.pages.length}</p>${pg.note ? `<p>${esc(pg.note)}</p>` : ''}<div class="status"></div></div>`;
+
+  if (pg.kind === 'grid') {
+    body += `<div class="cells c${pg.cols}">${pg.items
+      .map(
+        (c, i) => `<button class="cell"${pg.audio ? ` data-a="${i}"` : ''}><div class="ar">${esc(c.t)}</div>${c.s ? `<small>${esc(c.s)}</small>` : ''}</button>`
+      )
+      .join('')}</div>`;
+  } else if (pg.kind === 'forms') {
+    body += `<div class="forms"><b>Huruf</b><b>Sendiri</b><b>Awal</b><b>Tengah</b><b>Akhir</b>${HURUF.map(
+      ([c, n]) => `<span>${esc(n)}</span>${forms(c).map((f) => `<span class="ar">${esc(f)}</span>`).join('')}`
+    ).join('')}</div>`;
+  } else {
+    body += `<div class="list"><ul>${pg.items
+      .map(
+        (c) => `<li class="item-content"><div class="item-inner"><div class="item-title">${esc(c.s)}</div><div class="item-after ar">${esc(c.t)}</div></div></li>`
+      )
+      .join('')}</ul></div>`;
+  }
+
+  const next = pi + 1 < lv.pages.length ? `/level/${lv.id}/${pi + 1}/` : '';
+  body += `<div class="block"><button class="button button-large button-fill btn-done" data-key="${lv.id}-${pi}" data-next="${next}">${next ? 'Selesai, lanjut' : 'Selesai'}</button></div>`;
+  return page(pg.title, body);
+}
 
 const routes = [
   {
     path: '/',
     content: page(
       'Iqra',
-      `<div class="list inset"><ul>
-        <li><a href="/huruf/" class="item-link item-content"><div class="item-inner"><div class="item-title">Huruf Hijaiyah</div></div></a></li>
-        <li><a href="/quran/" class="item-link item-content"><div class="item-inner"><div class="item-title">Al-Qur'an</div></div></a></li>
-        <li><a href="/tentang/" class="item-link item-content"><div class="item-inner"><div class="item-title">Tentang</div></div></a></li>
-      </ul></div>`,
+      `<div class="level-list">${LEVELS.map(
+        (lv) => `<a href="/level/${lv.id}/" class="level-card">
+          <div class="lv-no">${lv.id}</div>
+          <div class="lv-txt"><b>Level ${lv.id} – ${esc(lv.title)}</b><span>${esc(lv.desc)}</span></div>
+          <div class="lv-prog" data-lv="${lv.id}"></div></a>`
+      ).join('')}</div>
+      <div class="block" style="text-align:center"><a href="/tentang/">Tentang aplikasi</a></div>`,
       false
     )
   },
   {
-    path: '/huruf/',
-    async: function ({ resolve }) {
-      loadAudio().then(() => {
-        const grid = HURUF.map(
-          (h, i) => `<button class="huruf-btn" data-i="${i}"><div class="ar">${h[0]}</div><small>${esc(h[1])}</small></button>`
-        ).join('');
-        resolve({ content: page('Huruf Hijaiyah', `<div class="status"></div><div class="huruf-grid">${grid}</div>`) });
+    path: '/level/:id/',
+    async: function ({ to, resolve }) {
+      const lv = LEVELS[+to.params.id - 1];
+      resolve({
+        content: page(
+          lv.title,
+          `<div class="list"><ul>${lv.pages
+            .map(
+              (pg, i) => `<li><a href="/level/${lv.id}/${i}/" class="item-link item-content"><div class="item-inner"><div class="item-title">${i + 1}. ${esc(pg.title)}</div><div class="item-after" data-pg="${lv.id}-${i}"></div></div></a></li>`
+            )
+            .join('')}</ul></div>`
+        )
       });
     }
   },
   {
-    path: '/quran/',
-    async: function ({ resolve }) {
-      loadQuran()
-        .then((q) => {
-          const items = q
-            .map(
-              (s) => `<li class="surah-item" data-k="${esc((s.n + ' ' + s.l + ' ' + s.t).toLowerCase())}">
-              <a href="/surah/${s.n}/" class="item-link item-content">
-                <div class="item-inner">
-                  <div class="item-title">${s.n}. ${esc(s.l)}<div class="item-footer">${esc(s.t)} · ${s.y.length} ayat</div></div>
-                  <div class="item-after ar ar-name">${esc(s.a)}</div>
-                </div>
-              </a></li>`
-            )
-            .join('');
-          resolve({
-            content: page(
-              "Al-Qur'an",
-              `<div class="block" style="margin-bottom:0"><input id="cari" type="search" placeholder="Cari surah..." style="width:100%;padding:10px;border-radius:10px;border:1px solid rgba(128,128,128,.4)"></div>
-               <div class="list"><ul>${items}</ul></div>`
-            )
-          });
-        })
-        .catch(fail(resolve));
-    }
-  },
-  {
-    path: '/surah/:n/',
+    path: '/level/:id/:p/',
     async: function ({ to, resolve }) {
-      loadQuran()
-        .then((q) => {
-          const s = q[+to.params.n - 1];
-          const bism = s.n !== 1 && s.n !== 9 ? '<div class="bismillah ar">بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ</div>' : '';
-          const ayat = s.y
-            .map(
-              (a, i) => `<div class="ayat"><div class="ar">${esc(a[0])} <span class="no">﴿${i + 1}﴾</span></div><div class="trj">${esc(a[1])}</div></div>`
-            )
-            .join('');
-          resolve({
-            content: page(
-              s.l,
-              `<div class="block"><div class="sur-ar ar">${esc(s.a)}</div><p style="text-align:center;margin:4px 0">${esc(s.t)} · ${s.y.length} ayat</p></div>${bism}${ayat}`
-            )
-          });
-        })
-        .catch(fail(resolve));
+      const lv = LEVELS[+to.params.id - 1];
+      resolve({ content: lessonBody(lv, +to.params.p) });
     }
   },
   {
@@ -122,9 +122,8 @@ const routes = [
     content: page(
       'Tentang',
       `<div class="block">
-        <p>Iqra: belajar huruf Hijaiyah dan membaca Al-Qur'an, bisa dipakai tanpa internet.</p>
+        <p>Iqra: belajar membaca huruf Hijaiyah bertahap dari Jilid 1 sampai Jilid 6, bisa dipakai tanpa internet.</p>
         <p>Audio dan font huruf berasal dari proyek <b>belajar-ngaji</b> oleh awahids (lisensi MIT).</p>
-        <p>Teks Al-Qur'an dan terjemahan Indonesia dari api.alquran.cloud.</p>
       </div>`
     )
   }
@@ -132,30 +131,32 @@ const routes = [
 
 const app = new Framework7({ el: '#app', name: 'Iqra', theme: 'auto', routes });
 const view = app.views.create('.view-main', { url: '/' });
+app.on('pageInit', (p) => paint(p.el));
+app.on('pageBeforeIn', (p) => paint(p.el));
 
 let player;
 document.addEventListener('click', (e) => {
-  const b = e.target.closest('.huruf-btn');
-  if (!b) return;
-  const i = +b.dataset.i;
-  const f = audioFor(i);
-  const st = document.querySelector('.page-current .status');
-  if (!f) {
-    if (st) st.textContent = 'Audio untuk huruf ini belum terhubung.';
+  const b = e.target.closest('[data-a]');
+  if (b) {
+    const i = +b.dataset.a;
+    const f = audioFor(i);
+    const st = document.querySelector('.page-current .status');
+    if (!f) {
+      if (st) st.textContent = 'Audio untuk huruf ini belum terhubung.';
+      return;
+    }
+    if (st) st.textContent = HURUF[i][1];
+    if (player) player.pause();
+    player = new Audio('./audio/' + encodeURIComponent(f));
+    player.play().catch(() => {});
     return;
   }
-  if (st) st.textContent = HURUF[i][1];
-  if (player) player.pause();
-  player = new Audio('./audio/' + encodeURIComponent(f));
-  player.play().catch(() => {});
-});
-
-document.addEventListener('input', (e) => {
-  if (e.target.id !== 'cari') return;
-  const q = e.target.value.trim().toLowerCase();
-  document.querySelectorAll('.page-current .surah-item').forEach((li) => {
-    li.style.display = li.dataset.k.includes(q) ? '' : 'none';
-  });
+  const d = e.target.closest('.btn-done');
+  if (d) {
+    setDone(d.dataset.key);
+    if (d.dataset.next) view.router.navigate(d.dataset.next, { reloadCurrent: true });
+    else view.router.back();
+  }
 });
 
 CapApp.addListener('backButton', () => {
