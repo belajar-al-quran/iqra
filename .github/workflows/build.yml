@@ -21,31 +21,32 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - name: Siapkan aset (audio + font) dari repo asli
+          node-version: 22
+      - run: npm install
+      - name: Siapkan library dan aset
         run: |
           set -e
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
           pip install fonttools brotli
+          mkdir -p www/lib www/audio www/fonts www/data
+          cp node_modules/framework7/framework7-bundle.min.js node_modules/framework7/framework7-bundle.min.css www/lib/
           git clone --depth 1 https://github.com/awahids/belajar-ngaji.git /tmp/asli
-          mkdir -p public/audio public/fonts
           find /tmp/asli/audio -type f | while read -r f; do
             n=$(basename "$f"); n="${n%.*}"
-            ffmpeg -y -loglevel error -i "$f" -ac 1 -c:a libopus -b:a 24k "public/audio/$n.ogg" || echo "lewati $f"
+            ffmpeg -nostdin -y -loglevel error -i "$f" -ac 1 -c:a libopus -b:a 24k "www/audio/$n.ogg" || echo "lewati $f"
           done
-          pyftsubset /tmp/asli/me_quran.ttf --unicodes="U+0020,U+00A0,U+0600-06FF,U+0750-077F,U+08A0-08FF,U+200C-200F,U+FB50-FDFF,U+FE70-FEFF" --flavor=woff2 --output-file=public/fonts/me_quran.woff2
-          cp /tmp/asli/LICENSE public/LICENSE-belajar-ngaji.txt
-          echo "Daftar audio:"; ls public/audio
-      - run: npm install
-      - run: node scripts/build-data.mjs
-      - run: npm run build
+          pyftsubset /tmp/asli/me_quran.ttf --unicodes="U+0020,U+00A0,U+0600-06FF,U+0750-077F,U+08A0-08FF,U+200C-200F,U+FB50-FDFF,U+FE70-FEFF" --flavor=woff2 --output-file=www/fonts/me_quran.woff2
+          cp /tmp/asli/LICENSE www/LICENSE-belajar-ngaji.txt
+          node -e "const fs=require('fs');const f=fs.readdirSync('www/audio').filter(x=>x.endsWith('.ogg')).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));fs.writeFileSync('www/data/audio.json',JSON.stringify(f));console.log('audio',f.length)"
+          echo "Daftar audio:"; ls www/audio
+          du -sh www
       - uses: actions/upload-artifact@v4
         with:
-          name: dist
-          path: dist
+          name: www
+          path: www
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: www
 
   deploy:
     needs: web
@@ -64,19 +65,19 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
       - uses: actions/download-artifact@v4
         with:
-          name: dist
-          path: dist
+          name: www
+          path: www
       - run: npm install
-      - run: npx cap add android
+      - run: ls www && npx cap add android
       - run: npx cap sync android
-      - run: cd android && ./gradlew assembleDebug
+      - run: cd android && chmod +x gradlew && ./gradlew assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
           name: iqra-apk
