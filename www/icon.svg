@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#17745a"/><stop offset="1" stop-color="#0a3326"/></linearGradient>
+    <linearGradient id="y" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f0d98c"/><stop offset="1" stop-color="#c9a34a"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#g)"/>
+  <rect x="28" y="28" width="456" height="456" rx="92" fill="none" stroke="url(#y)" stroke-width="8"/>
+  <text x="256" y="310" font-size="150" text-anchor="middle" fill="url(#y)" font-family="serif">اقرأ</text>
+</svg>
