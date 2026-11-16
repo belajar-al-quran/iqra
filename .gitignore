@@ -1,8 +1,8 @@
 node_modules
-dist
 android
-public/audio
-public/fonts
-public/data
+www/lib
+www/audio
+www/fonts
+www/data
 *.keystore
 *.jks
